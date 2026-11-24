@@ -1,0 +1,31 @@
+uploads/
+# Secrets (kabhi push nahi karna)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+coverage/
+
+# Uploaded resumes (candidates ka personal data)
+uploads/
+
+# Database files / logs
+*.sqlite
+*.sqlite3
+*.db
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

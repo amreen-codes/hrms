@@ -1,0 +1,37 @@
+{
+  "name": "ams-server",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "seed": "tsx src/seed.ts",
+    "migrate": "tsx src/migrate.ts",
+    "build": "tsc",
+    "test": "vitest run",
+    "create-superadmin": "tsx src/createSuperadmin.ts",
+    "start": "node dist/index.js",
+    "migrate:prod": "node dist/migrate.js",
+    "create-superadmin:prod": "node dist/createSuperadmin.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.19.2",
+    "express-rate-limit": "^8.7.4",
+    "helmet": "^8.3.0",
+    "mysql2": "^3.11.0",
+    "sequelize": "^6.37.3"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.0",
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.3.2",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.9"
+  }
+}

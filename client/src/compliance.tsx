@@ -1,0 +1,87 @@
+import { useState } from 'react';
+import { api, useLoad, user } from './api';
+import { Title, Table, Tag, Td } from './pages';
+
+const list = (d: any) => (Array.isArray(d) ? d : []);
+function useMsg() {
+  const [m, set] = useState<{ ok: boolean; text: string } | null>(null);
+  const banner = m && <p className={m.ok ? 'alert-ok' : 'alert-warn'} role={m.ok ? 'status' : 'alert'}>{m.text}</p>;
+  const run = async (fn: () => Promise<any>, ok: string, after?: () => void) => { try { await fn(); set({ ok: true, text: ok }); after?.(); } catch (e: any) { set({ ok: false, text: e.message }); } };
+  return { banner, run };
+}
+const money = (n: any) => Number(n).toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+const REASONS = ['layoff', 'business_closing', 'contract_ended', 'hours_cut', 'performance', 'honest_mistake', 'quit_good_cause_work', 'quit_good_cause_personal', 'misconduct', 'attendance', 'quit_no_cause', 'abandonment', 'quit_to_avoid_firing', 'fraud'];
+
+// ---------- P20 / P21 / S7 unemployment ----------
+export function UiClaims() {
+  const [rows, load] = useLoad('/ui-claims'); const [emps] = useLoad('/employees'); const [sel, setSel] = useState<number | null>(null); const [d, setD] = useState<any>(null); const { banner, run } = useMsg();
+  const [f, setF] = useState<any>({ employeeId: '', uiReason: 'layoff', reasonNote: '', claimFiledDate: '' }); const [ev, setEv] = useState<any>({ kind: 'notice', title: '', description: '', source: '', docDate: '' }); const [resp, setResp] = useState({ text: '', ok: false });
+  const open = async (id: number) => { setSel(id); setD(await api(`/ui-claims/${id}`)); };
+  const refresh = async () => { load(); if (sel) setD(await api(`/ui-claims/${sel}`)); };
+  const act = (fn: () => Promise<any>, ok: string) => run(fn, ok, refresh);
+  const ask = (q: string) => window.prompt(q) || '';
+  return (<div className="space-y-5"><Title>Unemployment claims</Title>{banner}
+    <div className="alert-warn">The state UI agency decides eligibility, not this system. Record the true separation reason, answer the agency by its deadline, and contest only with facts and documents.</div>
+    {!sel && <>
+      <div className="card space-y-3"><h2 className="font-semibold">Open a claim (after the separation is recorded in Offboarding)</h2>
+        <div className="grid gap-3 sm:grid-cols-4"><select className="input" value={f.employeeId} onChange={(e) => setF({ ...f, employeeId: e.target.value })}><option value="">Former employee…</option>{list(emps).map((e: any) => <option key={e.id} value={e.id}>{e.name}</option>)}</select>
+          <select className="input" value={f.uiReason} onChange={(e) => setF({ ...f, uiReason: e.target.value })}>{REASONS.map((r) => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}</select>
+          <input className="input" type="date" aria-label="Claim filed" value={f.claimFiledDate} onChange={(e) => setF({ ...f, claimFiledDate: e.target.value })} /><input className="input" placeholder="Explain if it differs from the separation record" value={f.reasonNote} onChange={(e) => setF({ ...f, reasonNote: e.target.value })} /></div>
+        <button className="btn" onClick={() => run(() => api('/ui-claims', 'POST', { ...f, employeeId: +f.employeeId, claimFiledDate: f.claimFiledDate || undefined }), 'Claim opened', load)}>Open claim</button></div>
+      <Table head={['Employee', 'State', 'Reason', 'Status', 'Employer response', 'Due', 'Agency decision', '']}>{list(rows).map((c: any) => (<tr key={c.id}><Td><b>{c.employeeName}</b></Td><Td>{c.state}</Td><Td className="capitalize">{c.uiReason.replace(/_/g, ' ')}</Td><Td><Tag s={c.status} /></Td><Td><Tag s={c.responseStatus === 'missed' ? 'rejected' : c.responseStatus === 'pending' ? 'pending' : 'approved'} />{' '}{c.responseStatus.replace('_', ' ')}</Td><Td>{c.responseDue || '—'}{c.daysToResponse != null && <span className="hint"> ({c.daysToResponse} d)</span>}</Td><Td>{c.agencyDecision}</Td><Td><button className="btn-ghost !px-2 !py-1" onClick={() => open(c.id)}>Open</button></Td></tr>))}</Table></>}
+    {sel && d && (<div className="space-y-4"><button className="btn-ghost" onClick={() => { setSel(null); setD(null); load(); }}>← All claims</button>
+      <div className="card space-y-2"><h2 className="font-semibold">{d.employeeName}: {d.state} claim #{d.id}</h2>
+        <div className="grid gap-1 text-sm sm:grid-cols-2"><div>Reason on file: <b className="capitalize">{d.uiReason.replace(/_/g, ' ')}</b></div><div>Last day: {d.lastDay}</div><div>Agency claim ID: {d.agencyClaimId || '—'}</div><div>Response due: <b>{d.responseDue || '—'}</b> ({d.responseStatus.replace('_', ' ')})</div>
+          <div>Agency decision: <b>{d.agencyDecision}</b>{d.decisionDate && ` on ${d.decisionDate}`}</div><div>Appeal deadline: {d.appealDeadline || '—'}</div></div>
+        <div className="hint">Guidance from the separation reason (Appendix A7): {d.guidance.indicator.replace(/_/g, ' ')}, {d.guidance.whoseCause} cause. Keep: {d.guidance.keep}. {d.guidance.notice}</div>
+        {d.status !== 'closed' && <div className="flex flex-wrap gap-2 pt-2">
+          {!d.agencyNoticeDate && <button className="btn !px-3 !py-1.5" onClick={() => { const nd = ask('Date on the agency notice (YYYY-MM-DD)'); if (!nd) return; const days = ask('Days allowed to respond (as printed on the notice, default 10)') || '10'; act(() => api(`/ui-claims/${d.id}/notice`, 'POST', { noticeDate: nd, responseDays: +days }), 'Notice recorded: deadline set'); }}>Record agency notice</button>}
+          {d.agencyDecision === 'pending' && <button className="btn-ghost !px-3 !py-1.5" onClick={() => { const decision = ask('Agency decision from its letter: eligible or denied'); const dd = ask('Date on the determination (YYYY-MM-DD)'); if (!decision || !dd) return; const days = ask('Appeal days printed on the letter (default 10)') || '10'; act(() => api(`/ui-claims/${d.id}/determination`, 'POST', { decision, decisionDate: dd, appealDays: +days }), 'Agency determination recorded'); }}>Record agency determination</button>}
+          {d.agencyDecision !== 'pending' && <button className="btn-ghost !px-3 !py-1.5" onClick={() => { const side = ask('Who is appealing? employer or employee'); const fd = ask('Filing date (YYYY-MM-DD)'); if (side && fd) act(() => api(`/ui-claims/${d.id}/appeal`, 'POST', { side, filedDate: fd, notes: ask('Notes') }), 'Appeal recorded'); }}>Record appeal</button>}
+          <button className="btn-ghost !px-3 !py-1.5" onClick={() => { const note = ask('Closing note'); act(() => api(`/ui-claims/${d.id}/close`, 'POST', { note }), 'Claim closed'); }}>Close claim</button></div>}</div>
+      <div className="card space-y-3"><h2 className="font-semibold">Evidence ({d.evidence.length})</h2>
+        {d.evidence.map((x: any) => <div key={x.id} className="text-sm"><b>{x.title}</b> <span className="hint">· {x.kind} · {x.docDate || ''} · {x.source}</span><div>{x.description}</div></div>)}
+        {d.status !== 'closed' && <div className="grid gap-2 sm:grid-cols-5"><select className="input" value={ev.kind} onChange={(e) => setEv({ ...ev, kind: e.target.value })}>{['policy', 'warning', 'attendance', 'incident', 'performance', 'payroll', 'complaint', 'notice', 'other'].map((k) => <option key={k}>{k}</option>)}</select>
+          <input className="input" placeholder="Title" value={ev.title} onChange={(e) => setEv({ ...ev, title: e.target.value })} /><input className="input" placeholder="Where it is kept" value={ev.source} onChange={(e) => setEv({ ...ev, source: e.target.value })} /><input className="input" type="date" aria-label="Document date" value={ev.docDate} onChange={(e) => setEv({ ...ev, docDate: e.target.value })} />
+          <button className="btn" onClick={() => act(async () => { await api(`/ui-claims/${d.id}/evidence`, 'POST', { ...ev, docDate: ev.docDate || undefined }); setEv({ kind: 'notice', title: '', description: '', source: '', docDate: '' }); }, 'Evidence added')}>Add</button>
+          <textarea className="input sm:col-span-5" rows={2} placeholder="Describe the document and what it shows" value={ev.description} onChange={(e) => setEv({ ...ev, description: e.target.value })} /></div>}</div>
+      {d.responseStatus === 'pending' && (<div className="card space-y-3"><h2 className="font-semibold">Employer response</h2>
+        <textarea className="input" rows={4} placeholder="Reason for separation, dates and wages: facts only" value={resp.text} onChange={(e) => setResp({ ...resp, text: e.target.value })} />
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={resp.ok} onChange={(e) => setResp({ ...resp, ok: e.target.checked })} />I confirm this response is accurate and supported by the records attached. False answers can bring penalties.</label>
+        <button className="btn" onClick={() => act(() => api(`/ui-claims/${d.id}/respond`, 'POST', { responseText: resp.text, accuracyConfirmed: resp.ok }), 'Response recorded')}>Submit response</button></div>)}
+      <div className="card"><h2 className="mb-2 font-semibold">Correspondence</h2>{d.correspondence.map((c: any) => <div key={c.id} className="text-sm"><b>{c.occurredOn}</b> <span className="hint">{c.direction === 'from_agency' ? 'from agency' : 'to agency'}</span>: {c.summary}</div>)}
+        {d.status !== 'closed' && <button className="btn-ghost mt-2 !px-3 !py-1.5" onClick={() => { const dir = ask('from_agency or to_agency'); const dt = ask('Date (YYYY-MM-DD)'); const sm = ask('Summary'); if (dir && dt && sm) act(() => api(`/ui-claims/${d.id}/correspondence`, 'POST', { direction: dir, date: dt, summary: sm }), 'Added'); }}>Add correspondence</button>}</div></div>)}</div>);
+}
+
+// ---------- A8 insurance register ----------
+export function Insurance() {
+  const [types] = useLoad('/insurance/types'); const [pols, load] = useLoad('/insurance'); const [emps] = useLoad('/employees'); const [sel, setSel] = useState<any>(null); const { banner, run } = useMsg(); const me = user();
+  const [f, setF] = useState<any>({ type: 'Workers\' Compensation', insurer: '', policyNumber: '', coverageLimit: '', premium: '', premiumFrequency: 'annual', effectiveDate: '', expirationDate: '', exclusions: '', cName: '', cPhone: '', cEmail: '' });
+  const open = async (id: number) => setSel(await api(`/insurance/${id}`)); const after = async () => { load(); if (sel) setSel(await api(`/insurance/${sel.id}`)); };
+  const gaps = list(types).filter((t: any) => t.activePolicies === 0);
+  return (<div className="space-y-5"><Title>Insurance register</Title>{banner}
+    {!sel && <>
+      <div className={gaps.length ? 'alert-warn' : 'alert-ok'}>{gaps.length ? `${gaps.length} of 15 policy types have no active policy: ${gaps.map((g: any) => g.type).join(', ')}.` : 'All 15 policy types have an active policy.'}</div>
+      <div className="card space-y-3"><h2 className="font-semibold">Add a policy</h2>
+        <div className="grid gap-3 sm:grid-cols-4"><select className="input" value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>{list(types).map((t: any) => <option key={t.no} value={t.type}>{t.no}. {t.type}</option>)}</select>
+          <input className="input" placeholder="Insurer" value={f.insurer} onChange={(e) => setF({ ...f, insurer: e.target.value })} /><input className="input" placeholder="Policy number" value={f.policyNumber} onChange={(e) => setF({ ...f, policyNumber: e.target.value })} />
+          <input className="input" type="number" placeholder="Coverage limit $" value={f.coverageLimit} onChange={(e) => setF({ ...f, coverageLimit: e.target.value })} />
+          <input className="input" type="number" placeholder="Premium $" value={f.premium} onChange={(e) => setF({ ...f, premium: e.target.value })} /><select className="input" value={f.premiumFrequency} onChange={(e) => setF({ ...f, premiumFrequency: e.target.value })}><option>monthly</option><option>quarterly</option><option>annual</option></select>
+          <input className="input" type="date" aria-label="Effective" value={f.effectiveDate} onChange={(e) => setF({ ...f, effectiveDate: e.target.value })} /><input className="input" type="date" aria-label="Expires" value={f.expirationDate} onChange={(e) => setF({ ...f, expirationDate: e.target.value })} />
+          <input className="input" placeholder="Claims contact name" value={f.cName} onChange={(e) => setF({ ...f, cName: e.target.value })} /><input className="input" placeholder="Claims phone" value={f.cPhone} onChange={(e) => setF({ ...f, cPhone: e.target.value })} /><input className="input" placeholder="Claims email" value={f.cEmail} onChange={(e) => setF({ ...f, cEmail: e.target.value })} /><input className="input" placeholder="Exclusions" value={f.exclusions} onChange={(e) => setF({ ...f, exclusions: e.target.value })} /></div>
+        <button className="btn" onClick={() => run(() => api('/insurance', 'POST', { type: f.type, insurer: f.insurer, policyNumber: f.policyNumber, coverageLimit: +f.coverageLimit, premium: +f.premium, premiumFrequency: f.premiumFrequency, effectiveDate: f.effectiveDate, expirationDate: f.expirationDate, exclusions: f.exclusions, claimsContact: { name: f.cName, phone: f.cPhone, email: f.cEmail } }), 'Policy added', load)}>Add policy</button>
+        <p className="hint">You and HR are reminded at 90, 60, 30 and 7 days before a policy expires. Unemployment Insurance is a state payroll-tax program: record the state account here.</p></div>
+      <Table head={['Type', 'Insurer', 'Policy no.', 'Limit', 'Premium', 'Expires', 'Renewal', 'Status', '']}>{list(pols).map((p: any) => (<tr key={p.id}><Td><b>{p.type}</b></Td><Td>{p.insurer}</Td><Td>{p.policyNumber}</Td><Td>{money(p.coverageLimit)}</Td><Td>{money(p.premium)} / {p.premiumFrequency}</Td><Td>{p.expirationDate}</Td><Td><Tag s={p.bucket === 'ok' ? 'approved' : p.bucket === 'expired' ? 'rejected' : 'pending'} />{' '}{p.bucket === 'ok' ? 'ok' : p.bucket.replace('d', '') + (p.bucket === 'expired' ? '' : ' days')}</Td><Td><Tag s={p.status === 'active' ? 'active' : 'rejected'} /></Td><Td><button className="btn-ghost !px-2 !py-1" onClick={() => open(p.id)}>Open</button></Td></tr>))}</Table></>}
+    {sel && (<div className="space-y-4"><button className="btn-ghost" onClick={() => { setSel(null); load(); }}>← All policies</button>
+      <div className="card space-y-2"><h2 className="font-semibold">{sel.type}: {sel.insurer} ({sel.policyNumber})</h2>
+        <div className="grid gap-1 text-sm sm:grid-cols-2"><div>Coverage limit: <b>{money(sel.coverageLimit)}</b></div><div>Premium: {money(sel.premium)} {sel.premiumFrequency}</div><div>Effective: {sel.effectiveDate}</div><div>Expires: <b>{sel.expirationDate}</b></div>
+          <div className="sm:col-span-2">Claims contact: {sel.claimsContact?.name} {sel.claimsContact?.phone} {sel.claimsContact?.email}</div><div className="sm:col-span-2">Exclusions: {sel.exclusions || '—'}</div></div>
+        <div className="flex flex-wrap gap-2"><button className="btn-ghost !px-3 !py-1.5" onClick={() => { const d = window.prompt('New expiration date after renewal (YYYY-MM-DD)') || ''; if (d) run(() => api(`/insurance/${sel.id}`, 'PATCH', { expirationDate: d }), 'Renewed: reminders restart', after); }}>Record renewal</button>
+          <button className="btn-ghost !px-3 !py-1.5" onClick={() => run(() => api(`/insurance/${sel.id}`, 'PATCH', { status: sel.status === 'cancelled' ? 'active' : 'cancelled' }), 'Status updated', after)}>{sel.status === 'cancelled' ? 'Reactivate' : 'Cancel policy'}</button></div></div>
+      <div className="card space-y-2"><h2 className="font-semibold">Covered people and assets</h2>
+        {sel.insured.map((i: any) => <div key={i.id} className="flex items-center justify-between text-sm"><span><b>{i.label}</b> <span className="hint">{i.kind} {i.details}</span></span><button className="btn-ghost !px-2 !py-1" onClick={() => run(() => api(`/insurance/${sel.id}/insured/${i.id}`, 'DELETE'), 'Removed', after)}>Remove</button></div>)}
+        <div className="flex flex-wrap gap-2"><select className="input max-w-[16rem]" defaultValue="" onChange={(e) => { if (e.target.value) run(() => api(`/insurance/${sel.id}/insured`, 'POST', { kind: 'person', employeeId: +e.target.value }), 'Person added', after); }}><option value="">Add a covered person…</option>{list(emps).filter((e: any) => e.id !== me.id || true).map((e: any) => <option key={e.id} value={e.id}>{e.name}</option>)}</select>
+          <button className="btn-ghost !px-3" onClick={() => { const label = window.prompt('Describe the covered asset (vehicle, building, equipment…)') || ''; if (label) run(() => api(`/insurance/${sel.id}/insured`, 'POST', { kind: 'asset', label }), 'Asset added', after); }}>Add asset</button></div></div>
+      <div className="card space-y-2"><h2 className="font-semibold">Certificates and documents</h2>{sel.documents.map((x: any) => <div key={x.id} className="text-sm"><b>{x.title}</b> <span className="hint">{x.kind} · {x.issuedDate || ''} · {x.reference}</span></div>)}
+        <button className="btn-ghost !px-3 !py-1.5" onClick={() => { const title = window.prompt('Document title (e.g. Certificate of insurance 2026)') || ''; const reference = window.prompt('Where it is stored (link or file name)') || ''; if (title) run(() => api(`/insurance/${sel.id}/documents`, 'POST', { kind: 'certificate', title, reference }), 'Document recorded', after); }}>Add certificate</button></div></div>)}</div>);
+}

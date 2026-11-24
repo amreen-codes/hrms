@@ -1,0 +1,2 @@
+import { defineConfig } from 'vitest/config';
+export default defineConfig({ test: { setupFiles: ['tests/setup.ts'], env: { NODE_ENV: 'test', DB_NAME: process.env.TEST_DB_NAME || 'ams_hrms_test', DB_USER: process.env.TEST_DB_USER || 'ams', DB_PASS: process.env.TEST_DB_PASS || 'ams_dev_pw', DB_HOST: process.env.TEST_DB_HOST || '127.0.0.1', DB_PORT: process.env.TEST_DB_PORT || '3306', ALLOW_BEARER: 'true', DATA_ENCRYPTION_KEY: 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=' }, fileParallelism: false, testTimeout: 30000, hookTimeout: 60000 } });
